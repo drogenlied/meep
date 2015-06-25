@@ -760,6 +760,44 @@ void grid_volume::print() const {
   printf("\n");
 }
 
+double grid_volume::distance_to(const grid_volume &vol, const ivec* period) const {
+	double dist = 0.0;
+
+	meep::integer delta[3];
+	meep::integer num_deltas = 0;
+	LOOP_OVER_DIRECTIONS(dim, d) {
+		if (period){
+			 delta[0] = -period->in_direction(d);
+			 delta[1] = 0;
+			 delta[2] = period->in_direction(d);
+			 num_deltas = 3;
+		}
+		else {
+			delta[0] = 0;
+			num_deltas = 1;
+		}
+		double tmp_dist = meep::infinity;
+		for(meep::integer i = 0; i < num_deltas; ++i){
+			meep::integer la = this->little_corner().in_direction(d) + delta[i];
+			meep::integer ua = this->big_corner().in_direction(d) + delta[i];
+			meep::integer lb = vol.little_corner().in_direction(d);
+			meep::integer ub = vol.big_corner().in_direction(d);
+			double d = 0.0;
+			if (ub < la){
+				d = static_cast<realnum>(la-ub);
+				d = d*d;
+			}
+			else if(lb > ua){
+				d = static_cast<realnum>(lb-ua);
+				d = d*d;
+			}
+			tmp_dist = (d < tmp_dist)? d : tmp_dist;
+		}
+		dist += tmp_dist;
+	}
+	return sqrt(dist);
+}
+
 bool grid_volume::intersect_with(const grid_volume &vol_in, grid_volume *intersection, grid_volume *others, int *num_others) const {
   meep::integer temp_num[3] = {0,0,0};
   ivec new_io(dim);

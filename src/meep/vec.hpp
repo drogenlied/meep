@@ -762,6 +762,7 @@ class grid_volume {
 
   volume dV(component c, meep::integer index) const;
   volume dV(const ivec &, double diameter = 1.0) const;
+  double distance_to(const grid_volume &vol, const ivec* period) const;
   bool intersect_with(const grid_volume &vol_in, grid_volume *intersection = NULL, grid_volume *others = NULL, int *num_others = NULL) const;
   double rmin() const;
   double rmax() const;

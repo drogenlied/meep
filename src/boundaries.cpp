@@ -279,279 +279,327 @@ void fields::find_metals() {
 }
 
 bool fields_chunk::needs_W_notowned(component c) {
-  for (susceptibility *chiP = s->chiP[type(c)]; chiP; chiP = chiP->next)
-    if (chiP->needs_W_notowned(c, f)) return true;
-  return false;
+	for (susceptibility *chiP = s->chiP[type(c)]; chiP; chiP = chiP->next){
+		if (chiP->needs_W_notowned(c, f)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 void fields::connect_the_chunks() {
-  meep::integer *nc[NUM_FIELD_TYPES][3][2];
-  FOR_FIELD_TYPES(f)
-    for (int ip=0;ip<3;ip++)
-      for (int io=0;io<2;io++) {
-	nc[f][ip][io] = new meep::integer[num_chunks];
-	for (int i=0;i<num_chunks;i++) nc[f][ip][io][i] = 0;
-      }
-
-  /* For some of the chunks, H==B, and we definitely don't need to
-     send B between two such chunks.   We'll still send B when
-     the recipient has H != B, since the recipient needs to get B
-     from somewhere (although it could get it locally, in principle).
-     When the sender has H != B, we'll skip sending B (we'll only send H)
-     since we need to get the correct curl H in the E update.  This is
-     a bit subtle since the non-owned B may be different from H even
-     on an H==B chunk (true?), but since we don't use the non-owned B
-     for anything(?) it shouldn't matter. */
-  int *B_redundant = new int[num_chunks*2 * 5];
-  for (int i = 0; i < num_chunks; ++i)
-    FOR_H_AND_B(hc,bc)
-      B_redundant[5*(num_chunks+i) + bc-Bx] 
-      = chunks[i]->f[hc][0] == chunks[i]->f[bc][0];
-  and_to_all(B_redundant + 5*num_chunks, B_redundant, 5*num_chunks);
-
-  /* Figure out whether we need the notowned W field (== E/H in
-     non-PML regions) in update_pols, e.g. if we have an anisotropic
-     susceptibility.  In this case, we have an additional
-     communication step where we communicate the notowned W.  Then,
-     after updating the polarizations, we communicate the notowned E/H
-     ... this does the E/H communication twice between non-PML regions
-     and hence is somewhat wasteful, but greatly simplifies the case
-     of communicating between a PML region (which has a separate W
-     array) and a non-PML region (no separate W). */
-  bool needs_W_notowned[NUM_FIELD_COMPONENTS];
-  FOR_COMPONENTS(c) needs_W_notowned[c] = false;
-  FOR_E_AND_H(c) for (int i=0;i<num_chunks;i++) 
-    needs_W_notowned[c]= needs_W_notowned[c] || chunks[i]->needs_W_notowned(c);
-  FOR_E_AND_H(c) needs_W_notowned[c] = or_to_all(needs_W_notowned[c]);
-
-  for (int i=0;i<num_chunks;i++) {
-    // First count the border elements...
-    const grid_volume vi = chunks[i]->gv;
-    FOR_FIELD_TYPES(ft)
-      for (int ip=0;ip<3;ip++)
-	for (int j=0;j<num_chunks;j++)
-	  comm_sizes[ft][ip][j+i*num_chunks] = 0;
-    FOR_COMPONENTS(corig) {
-      if (have_component(corig))
-	LOOP_OVER_VOL_NOTOWNED(vi, corig, n) {
-	  IVEC_LOOP_ILOC(vi, here);
-	  component c = corig;
-	  // We're looking at a border element...
-	  complex<double> thephase;
-	  if (locate_component_point(&c,&here,&thephase)
-	      && !on_metal_boundary(here))
-	    for (int j=0;j<num_chunks;j++) {
-	      if ((chunks[i]->is_mine() || chunks[j]->is_mine())
-		  && chunks[j]->gv.owns(here)
-		  && !(is_B(corig) && is_B(c) &&
-		       B_redundant[5*i+corig-Bx] && B_redundant[5*j+c-Bx])) {
-		const int pair = j+i*num_chunks;
-		const connect_phase ip = thephase == 1.0 ? CONNECT_COPY 
-		  : (thephase == -1.0 ? CONNECT_NEGATE : CONNECT_PHASE);
-		{
-		  field_type f = type(c);
-		  const int nn = is_real?1:2;
-		  nc[f][ip][Incoming][i] += nn;
-		  nc[f][ip][Outgoing][j] += nn;
-		  comm_sizes[f][ip][pair] += nn;
-		}
-		if (needs_W_notowned[corig]) {
-		  field_type f = is_electric(corig) ? WE_stuff : WH_stuff;
-		  const int nn = is_real?1:2;
-		  nc[f][ip][Incoming][i] += nn;
-		  nc[f][ip][Outgoing][j] += nn;
-		  comm_sizes[f][ip][pair] += nn;
-		}
-		if (is_electric(corig) || is_magnetic(corig)) {
-		  field_type f = is_electric(corig) ? PE_stuff : PH_stuff;
-		  meep::integer ni = 0, cni = 0;
-		  for (polarization_state *pi=chunks[i]->pol[type(corig)]; pi; 
-		       pi = pi->next)
-		    for (polarization_state *pj=chunks[j]->pol[type(c)]; pj;
-			 pj = pj->next)
-		      if (*pi->s == *pj->s) { 
-			if (pi->data && chunks[i]->is_mine()) {
-			  ni += pi->s->num_internal_notowned_needed(corig, 
-								    pi->data);
-			  cni += pi->s->num_cinternal_notowned_needed(corig, 
-								     pi->data);
+	meep::integer *nc[NUM_FIELD_TYPES][3][2];
+	FOR_FIELD_TYPES(f) {
+		for (int ip=0;ip<3;ip++) {
+			for (int io=0;io<2;io++) {
+				nc[f][ip][io] = new meep::integer[num_chunks];
+				for (int i=0;i<num_chunks;i++) {
+					nc[f][ip][io][i] = 0;
+				}
 			}
-			else if (pj->data && chunks[j]->is_mine()) {
-			  ni += pj->s->num_internal_notowned_needed(c,
-								    pj->data);
-			  cni += pj->s->num_cinternal_notowned_needed(c,
-								    pj->data);
-			}
-		      }
-		  const meep::integer nn = (is_real?1:2) * (cni);
-		  nc[f][ip][Incoming][i] += nn;
-		  nc[f][ip][Outgoing][j] += nn;
-		  comm_sizes[f][ip][pair] += nn;
-		  const connect_phase iip = CONNECT_COPY;
-		  nc[f][iip][Incoming][i] += ni;
-		  nc[f][iip][Outgoing][j] += ni;
-		  comm_sizes[f][iip][pair] += ni;
 		}
-	      } // if is_mine and owns...
-	    } // loop over j chunks
-        } // LOOP_OVER_VOL_NOTOWNED
-    } // FOR_COMPONENTS
+	}
 
-    // Allocating comm blocks as we go...
-    FOR_FIELD_TYPES(ft)
-      for (int j=0;j<num_chunks;j++) {
-        delete[] comm_blocks[ft][j+i*num_chunks];
-        comm_blocks[ft][j+i*num_chunks] =
-          new realnum[comm_size_tot(ft, j+i*num_chunks)];
-      }
-  } // loop over i chunks
+	// For some of the chunks, H==B, and we definitely don't need to
+	// send B between two such chunks.   We'll still send B when
+	// the recipient has H != B, since the recipient needs to get B
+	// from somewhere (although it could get it locally, in principle).
+	// When the sender has H != B, we'll skip sending B (we'll only send H)
+	// since we need to get the correct curl H in the E update.  This is
+	// a bit subtle since the non-owned B may be different from H even
+	// on an H==B chunk (true?), but since we don't use the non-owned B
+	// for anything(?) it shouldn't matter.
+	int *B_redundant = new int[num_chunks * 2 * 5];
+	for (int i = 0; i < num_chunks; ++i) {
+		FOR_H_AND_B(hc,bc) {
+			B_redundant[5*(num_chunks+i) + bc-Bx]
+			= chunks[i]->f[hc][0] == chunks[i]->f[bc][0];
+		}
+	}
+	and_to_all(B_redundant + 5 * num_chunks, B_redundant, 5 * num_chunks);
 
-  /* Note that the ordering of the connections arrays must be kept
-     consistent with the fields::step_boundaries.  In particular, we
-     must set up the connections array so that all of the connections
-     for process i come before all of the connections for process i'
-     for i < i' */
+	// Figure out whether we need the notowned W field (== E/H in
+	// non-PML regions) in update_pols, e.g. if we have an anisotropic
+	// susceptibility.  In this case, we have an additional
+	// communication step where we communicate the notowned W.  Then,
+	// after updating the polarizations, we communicate the notowned E/H
+	// ... this does the E/H communication twice between non-PML regions
+	// and hence is somewhat wasteful, but greatly simplifies the case
+	// of communicating between a PML region (which has a separate W
+	// array) and a non-PML region (no separate W).
+	bool needs_W_notowned[NUM_FIELD_COMPONENTS];
+	FOR_COMPONENTS(c){
+	  needs_W_notowned[c] = false;
+	}
+	FOR_E_AND_H(c) {
+		for (int i=0;i<num_chunks;i++) {
+			needs_W_notowned[c] = needs_W_notowned[c]
+									|| chunks[i]->needs_W_notowned(c);
+		}
+	}
+	FOR_E_AND_H(c){
+		needs_W_notowned[c] = or_to_all(needs_W_notowned[c]);
+	}
 
-  // wh stores the current indices in the connections array(s)
-  meep::integer *wh[NUM_FIELD_TYPES][3][2];
+	for(int i = 0; i < num_chunks; ++i){
+		// First count the border elements...
+		const grid_volume vi = chunks[i]->gv;
+		FOR_FIELD_TYPES(ft) {
+			for (int ip=0;ip<3;ip++) {
+				for (int j=0;j<num_chunks;j++) {
+					comm_sizes[ft][ip][j+i*num_chunks] = 0;
+				}
+			}
+		}
 
-  /* Now allocate the connection arrays... this is still slightly
-     wasteful (by a factor of 2) because we allocate for chunks we
-     don't own if we have a connection with them. Removing this waste
-     would mean a bunch more is_mine() checks below. */
-  FOR_FIELD_TYPES(f)
-    for (int ip=0;ip<3;ip++) {
-      for (int io=0;io<2;io++) {
-	for (int i=0;i<num_chunks;i++)
-	  chunks[i]->alloc_extra_connections(field_type(f),
-					     connect_phase(ip),
-					     in_or_out(io),
-					     nc[f][ip][io][i]);
-	delete[] nc[f][ip][io];
-	wh[f][ip][io] = new meep::integer[num_chunks];
-      }
-      for (int i=0;i<num_chunks;i++) wh[f][ip][Outgoing][i] = 0;
-    }
+		ivec period = this->gv.big_corner() - this->gv.little_corner();
 
-  // Next start setting up the connections...
+		for(int j = 0; j < num_chunks; ++j){
+			if (!(chunks[i]->is_mine() || chunks[j]->is_mine())){
+				continue;
+			}
+			if (vi.distance_to(chunks[j]->gv, &period) > 1){
+				//printf("%d: skipping chunk %d. Too far away from chunk %d!\n",my_rank(),j,i);
+				continue;
+			}
+			FOR_COMPONENTS(corig) {
+				if (have_component(corig)){
+					LOOP_OVER_VOL_NOTOWNED(vi, corig, n) {
+						IVEC_LOOP_ILOC(vi, here);
+						component c = corig;
+						// We're looking at a border element...
+						complex<double> thephase;
+						if (locate_component_point(&c,&here,&thephase)
+								&& !on_metal_boundary(here)){
+							bool condition = (chunks[i]->is_mine() || chunks[j]->is_mine())
+								  && chunks[j]->gv.owns(here)
+								  && !(is_B(corig) && is_B(c)
+										&& B_redundant[5*i+corig-Bx]
+										&& B_redundant[5*j+c-Bx]);
+							if (condition) {
+								const int pair = j+i*num_chunks;
+								const connect_phase ip = thephase == 1.0 ? CONNECT_COPY
+								  : (thephase == -1.0 ? CONNECT_NEGATE : CONNECT_PHASE);
+								{
+									field_type f = type(c);
+									const int nn = is_real?1:2;
+									nc[f][ip][Incoming][i] += nn;
+									nc[f][ip][Outgoing][j] += nn;
+									comm_sizes[f][ip][pair] += nn;
+								}
+								if (needs_W_notowned[corig]) {
+									field_type f = is_electric(corig) ? WE_stuff : WH_stuff;
+									const int nn = is_real?1:2;
+									nc[f][ip][Incoming][i] += nn;
+									nc[f][ip][Outgoing][j] += nn;
+									comm_sizes[f][ip][pair] += nn;
+								}
+								if (is_electric(corig) || is_magnetic(corig)) {
+									field_type f = is_electric(corig) ? PE_stuff : PH_stuff;
+									meep::integer ni = 0, cni = 0;
+									for (polarization_state *pi=chunks[i]->pol[type(corig)]; pi;
+											pi = pi->next){
+										for (polarization_state *pj=chunks[j]->pol[type(c)]; pj;
+												pj = pj->next){
+											if (*pi->s == *pj->s) {
+												if (pi->data && chunks[i]->is_mine()) {
+													ni += pi->s->num_internal_notowned_needed(corig,
+															pi->data);
+													cni += pi->s->num_cinternal_notowned_needed(corig,
+															pi->data);
+												}
+												else if (pj->data && chunks[j]->is_mine()) {
+													ni += pj->s->num_internal_notowned_needed(c,
+															pj->data);
+													cni += pj->s->num_cinternal_notowned_needed(c,
+															pj->data);
+												}
+											}
+										}
+									}
+									const meep::integer nn = (is_real?1:2) * (cni);
+									nc[f][ip][Incoming][i] += nn;
+									nc[f][ip][Outgoing][j] += nn;
+									comm_sizes[f][ip][pair] += nn;
+									const connect_phase iip = CONNECT_COPY;
+									nc[f][iip][Incoming][i] += ni;
+									nc[f][iip][Outgoing][j] += ni;
+									comm_sizes[f][iip][pair] += ni;
+								}
+							} // if is_mine and owns...
+						} // if locate_component_point
+					} // LOOP_OVER_VOL_NOTOWNED
+				} // if have_component
+			} // FOR_COMPONENTS
+		} // loop over j chunks
+
+		// Allocating comm blocks as we go...
+		FOR_FIELD_TYPES(ft){
+			for (int j=0;j<num_chunks;j++) {
+				delete[] comm_blocks[ft][j+i*num_chunks];
+				comm_blocks[ft][j+i*num_chunks] =
+						new realnum[comm_size_tot(ft, j+i*num_chunks)];
+			}
+		}
+	} // loop over i chunks
+
+	//Note that the ordering of the connections arrays must be kept
+	//consistent with the fields::step_boundaries.  In particular, we
+	//must set up the connections array so that all of the connections
+	//for process i come before all of the connections for process i'
+	//for i < i'
+
+	// wh stores the current indices in the connections array(s)
+	meep::integer *wh[NUM_FIELD_TYPES][3][2];
+
+	//  Now allocate the connection arrays... this is still slightly
+	//  wasteful (by a factor of 2) because we allocate for chunks we
+	//  don't own if we have a connection with them. Removing this waste
+	//  would mean a bunch more is_mine() checks below.
+	FOR_FIELD_TYPES(f){
+		for (int ip=0;ip<3;ip++) {
+			for (int io=0;io<2;io++) {
+				for (int i=0;i<num_chunks;i++){
+					chunks[i]->alloc_extra_connections(field_type(f),
+							connect_phase(ip),
+							in_or_out(io),
+							nc[f][ip][io][i]);
+				}
+				delete[] nc[f][ip][io];
+				wh[f][ip][io] = new meep::integer[num_chunks];
+			}
+			for (int i=0;i<num_chunks;i++) wh[f][ip][Outgoing][i] = 0;
+		}
+	}
+	// Next start setting up the connections...
   
-  for (int i=0;i<num_chunks;i++) {
-    const grid_volume vi = chunks[i]->gv;
+	for(int i = 0; i < num_chunks; ++i){
+		const grid_volume vi = chunks[i]->gv;
     
-    // initialize wh[f][ip][Incoming][j] to sum of comm_sizes for jj < j
-    FOR_FIELD_TYPES(f)
-      for (int ip=0;ip<3;ip++) {
-	wh[f][ip][Incoming][0] = 0;
-	for (int j = 1; j < num_chunks; ++j)
-	  wh[f][ip][Incoming][j] = wh[f][ip][Incoming][j-1]
-	    + comm_sizes[f][ip][(j-1)+i*num_chunks];
-      }
-
-    FOR_COMPONENTS(corig)
-      if (have_component(corig))
-	LOOP_OVER_VOL_NOTOWNED(vi, corig, n) {
-  	  IVEC_LOOP_ILOC(vi, here);
-	  component c = corig;
-	  // We're looking at a border element...
-	  complex<double> thephase;
-	  if (locate_component_point(&c,&here,&thephase)
-	      && !on_metal_boundary(here))
-	    for (int j=0;j<num_chunks;j++) {
-	      if ((chunks[i]->is_mine() || chunks[j]->is_mine())
-		  && chunks[j]->gv.owns(here)
-		  && !(is_B(corig) && is_B(c) &&
-		       B_redundant[5*i+corig-Bx] && B_redundant[5*j+c-Bx])) {
-		const connect_phase ip = thephase == 1.0 ? CONNECT_COPY 
-		  : (thephase == -1.0 ? CONNECT_NEGATE : CONNECT_PHASE);
-		const meep::integer m = chunks[j]->gv.index(c, here);
-
-		{
-		  field_type f = type(c);
-		  if (ip == CONNECT_PHASE)
-		    chunks[i]->connection_phases[f][wh[f][ip][Incoming][j]/2] =
-		      thephase;
-		  DOCMP {
-		    chunks[i]->connections[f][ip][Incoming]
-		      [wh[f][ip][Incoming][j]++] = 
-		      chunks[i]->f[corig][cmp] + n;
-		    chunks[j]->connections[f][ip][Outgoing]
-		      [wh[f][ip][Outgoing][j]++] = 
-		      chunks[j]->f[c][cmp] + m;
-		  }
-		}
-		
-		if (needs_W_notowned[corig]) {
-		  field_type f = is_electric(corig) ? WE_stuff : WH_stuff;
-		  if (ip == CONNECT_PHASE)
-		    chunks[i]->connection_phases[f][wh[f][ip][Incoming][j]/2] =
-		      thephase;
-		  DOCMP {
-		    chunks[i]->connections[f][ip][Incoming]
-		      [wh[f][ip][Incoming][j]++] = 
-		      (chunks[i]->f_w[corig][cmp] ? chunks[i]->f_w[corig][cmp]
-		       : chunks[i]->f[corig][cmp]) + n;
-		    chunks[j]->connections[f][ip][Outgoing]
-		      [wh[f][ip][Outgoing][j]++] = 
-		      (chunks[j]->f_w[c][cmp] ? chunks[j]->f_w[c][cmp]
-		       : chunks[j]->f[c][cmp]) + m;
-		  }
-		}
-		
-		if (is_electric(corig) || is_magnetic(corig)) {
-		  field_type f = is_electric(corig) ? PE_stuff : PH_stuff;
-		  for (polarization_state *pi=chunks[i]->pol[type(corig)]; pi; 
-		       pi = pi->next)
-		    for (polarization_state *pj=chunks[j]->pol[type(c)]; pj;
-			 pj = pj->next)
-		      if (*pi->s == *pj->s) {
-			polarization_state *po = NULL;
-			if (pi->data && chunks[i]->is_mine())
-			  po = pi;
-			else if (pj->data && chunks[j]->is_mine())
-			  po = pj;
-			if (po) {
-			  const connect_phase iip = CONNECT_COPY;
-			  const meep::integer ni = po->s->
-			    num_internal_notowned_needed(corig, po->data);
-			  for (meep::integer k = 0; k < ni; ++k) {
-			    chunks[i]->connections[f][iip][Incoming]
-			      [wh[f][iip][Incoming][j]++] = 
-			      po->s->internal_notowned_ptr(k, corig, n, 
-							   pi->data);
-			    chunks[j]->connections[f][iip][Outgoing]
-			      [wh[f][iip][Outgoing][j]++] =
-			      po->s->internal_notowned_ptr(k, c, m, 
-							   pj->data);
-			  }
-			  const meep::integer cni = po->s->
-			    num_cinternal_notowned_needed(corig, po->data);
-			  for (meep::integer k = 0; k < cni; ++k) {
-			    if (ip == CONNECT_PHASE)
-			      chunks[i]->connection_phases[f]
-				[wh[f][ip][Incoming][j]/2] = thephase;
-			    DOCMP {
-			      chunks[i]->connections[f][ip][Incoming]
-				[wh[f][ip][Incoming][j]++] =
-				po->s->cinternal_notowned_ptr(k, corig,cmp, n, 
-							      pi->data);
-			      chunks[j]->connections[f][ip][Outgoing]
-				[wh[f][ip][Outgoing][j]++] =
-				po->s->cinternal_notowned_ptr(k, c,cmp, m, 
-							     pj->data);
-			    }
-			  }
+		// initialize wh[f][ip][Incoming][j] to sum of comm_sizes for jj < j
+		FOR_FIELD_TYPES(f) {
+			for (int ip=0;ip<3;ip++) {
+				wh[f][ip][Incoming][0] = 0;
+				for (int j = 1; j < num_chunks; ++j){
+					wh[f][ip][Incoming][j] = wh[f][ip][Incoming][j-1]
+									   + comm_sizes[f][ip][(j-1)+i*num_chunks];
+				}
 			}
-		      }
-		} // is_electric(corig)
-	      } // if is_mine and owns...
-	    } // loop over j chunks
-      } // LOOP_OVER_VOL_NOTOWNED
-  } // loop over i chunks
-  FOR_FIELD_TYPES(f)
-    for (int ip=0;ip<3;ip++)
-      for (int io=0;io<2;io++)
-	delete[] wh[f][ip][io];
-  delete[] B_redundant;
+		}
+
+		ivec period = this->gv.big_corner() - this->gv.little_corner();
+
+		for(int j = 0; j < num_chunks; ++j){
+			if (!(chunks[i]->is_mine() || chunks[j]->is_mine())){
+				continue;
+			}
+			if (vi.distance_to(chunks[j]->gv, &period) > 1){
+				//printf("%d: skipping chunk %d. Too far away from chunk %d!\n",my_rank(),j,i);
+				continue;
+			}
+			FOR_COMPONENTS(corig){
+				if (have_component(corig)){
+					LOOP_OVER_VOL_NOTOWNED(vi, corig, n) {
+						IVEC_LOOP_ILOC(vi, here);
+						component c = corig;
+						// We're looking at a border element...
+						complex<double> thephase;
+						if (locate_component_point(&c,&here,&thephase)
+								&& !on_metal_boundary(here)) {
+							bool condition = (chunks[i]->is_mine() || chunks[j]->is_mine())
+										  && chunks[j]->gv.owns(here)
+										  && !(is_B(corig) && is_B(c) &&
+												  B_redundant[5*i+corig-Bx] && B_redundant[5*j+c-Bx]);
+							if (condition) {
+								const connect_phase ip = thephase == 1.0 ? CONNECT_COPY
+										: (thephase == -1.0 ? CONNECT_NEGATE : CONNECT_PHASE);
+								const meep::integer m = chunks[j]->gv.index(c, here);
+								{
+									field_type f = type(c);
+									if (ip == CONNECT_PHASE) {
+										chunks[i]->connection_phases[f][wh[f][ip][Incoming][j]/2] =
+												thephase;
+									}
+									DOCMP {
+										chunks[i]->connections[f][ip][Incoming][wh[f][ip][Incoming][j]++] =
+												chunks[i]->f[corig][cmp] + n;
+										chunks[j]->connections[f][ip][Outgoing][wh[f][ip][Outgoing][j]++] =
+												chunks[j]->f[c][cmp] + m;
+									}
+								}
+								if (needs_W_notowned[corig]) {
+									field_type f = is_electric(corig) ? WE_stuff : WH_stuff;
+									if (ip == CONNECT_PHASE) {
+										chunks[i]->connection_phases[f][wh[f][ip][Incoming][j]/2] =
+												thephase;
+									}
+									DOCMP {
+										chunks[i]->connections[f][ip][Incoming][wh[f][ip][Incoming][j]++] =
+												(chunks[i]->f_w[corig][cmp] ?
+														chunks[i]->f_w[corig][cmp] : chunks[i]->f[corig][cmp]) + n;
+										chunks[j]->connections[f][ip][Outgoing][wh[f][ip][Outgoing][j]++] =
+												(chunks[j]->f_w[c][cmp] ?
+														chunks[j]->f_w[c][cmp] : chunks[j]->f[c][cmp]) + m;
+									}
+								}
+								if (is_electric(corig) || is_magnetic(corig)) {
+									field_type f = is_electric(corig) ? PE_stuff : PH_stuff;
+									for (polarization_state *pi=chunks[i]->pol[type(corig)]; pi;
+											pi = pi->next) {
+										for (polarization_state *pj=chunks[j]->pol[type(c)]; pj;
+												pj = pj->next) {
+											if (*pi->s == *pj->s) {
+												polarization_state *po = NULL;
+												if (pi->data && chunks[i]->is_mine()){
+													po = pi;
+												}
+												else if (pj->data && chunks[j]->is_mine()){
+													po = pj;
+												}
+												if (po) {
+													const connect_phase iip = CONNECT_COPY;
+													const meep::integer ni = po->s->
+															num_internal_notowned_needed(corig, po->data);
+													for (meep::integer k = 0; k < ni; ++k) {
+														chunks[i]->connections[f][iip][Incoming][wh[f][iip][Incoming][j]++] =
+																po->s->internal_notowned_ptr(k, corig, n, pi->data);
+														chunks[j]->connections[f][iip][Outgoing][wh[f][iip][Outgoing][j]++] =
+																po->s->internal_notowned_ptr(k, c, m, pj->data);
+													}
+													const meep::integer cni = po->s->
+															num_cinternal_notowned_needed(corig, po->data);
+													for (meep::integer k = 0; k < cni; ++k) {
+														if (ip == CONNECT_PHASE){
+															chunks[i]->connection_phases[f][wh[f][ip][Incoming][j]/2] = thephase;
+														}
+														DOCMP {
+															chunks[i]->connections[f][ip][Incoming][wh[f][ip][Incoming][j]++] =
+																	po->s->cinternal_notowned_ptr(k, corig,cmp, n,pi->data);
+															chunks[j]->connections[f][ip][Outgoing][wh[f][ip][Outgoing][j]++] =
+																	po->s->cinternal_notowned_ptr(k, c,cmp, m, pj->data);
+														}
+													}
+												}
+											}
+										}
+									}
+								} // is_electric(corig)
+							} // if is_mine and owns...
+						}
+					} // LOOP_OVER_VOL_NOTOWNED
+				}
+			}
+		} // loop over j chunks
+	} // loop over i chunks
+
+	FOR_FIELD_TYPES(f){
+		for (int ip=0;ip<3;ip++){
+			for (int io=0;io<2;io++){
+				delete[] wh[f][ip][io];
+			}
+    	}
+	}
+	delete[] B_redundant;
 }
 
 void fields_chunk::alloc_extra_connections(field_type f, connect_phase ip,

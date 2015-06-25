@@ -191,11 +191,14 @@ int check_pml2d(double eps(const vec &), component c,
     }
     refl_const = pow(abs(ft - ft2),2.0) / pow(abs(ft2),2.0);
     master_printf("refl2d:, %g, %g\n", res, refl_const);
+    double sf = pow((res - res_step)/res,
+			   offdiag != 0 ? 6.0 : 8.0) * 1.25;
     if (i > 0 && 
-	refl_const > prev_refl_const * pow((res - res_step)/res,
-					   offdiag != 0 ? 6.0 : 8.0) * 1.2)
+	refl_const > prev_refl_const * sf){
+      master_printf("ratio %g, limit %g\n",refl_const/prev_refl_const, sf);
       return 1;
-    prev_refl_const = refl_const;
+    }
+      prev_refl_const = refl_const;
   }
   master_printf("passed 2d %s PML check.\n", c == Ez ? "TM" : "TE");
   return 0;
