@@ -146,8 +146,7 @@ void send(int from, int to, double *data, int size) {
 #endif
 }
 
-#if MEEP_SINGLE
-void broadcast(int from, realnum *data, meep::integer size) {
+void broadcast(int from, float *data, meep::integer size) {
 #ifdef HAVE_MPI
   if (size == 0) return;
   if (size > INT32_MAX){
@@ -160,7 +159,6 @@ void broadcast(int from, realnum *data, meep::integer size) {
   UNUSED(size);
 #endif
 }
-#endif
 
 void broadcast(int from, double *data, meep::integer size) {
 #ifdef HAVE_MPI
@@ -308,6 +306,14 @@ ivec max_to_all(const ivec &pt) {
   return ptout;
 }
 
+float sum_to_master(float in) {
+  double out = in;
+#ifdef HAVE_MPI
+  MPI_Reduce(&in,&out,1,MPI_FLOAT,MPI_SUM,0,mycomm);
+#endif
+  return out;
+}
+
 double sum_to_master(double in) {
   double out = in;
 #ifdef HAVE_MPI
@@ -346,6 +352,18 @@ void sum_to_master(const double *in, double *out, meep::integer size) {
 #endif
 }
 
+void sum_to_master(const float *in, float *out, meep::integer size) {
+#ifdef HAVE_MPI
+	if (size > INT32_MAX){
+		abort("broadcast size exeeds maximum message size");
+	}
+  MPI_Reduce((void*) in, out, static_cast<int>(size), MPI_FLOAT,MPI_SUM,0,mycomm);
+#else
+  memcpy(out, in, sizeof(double) * size);
+#endif
+}
+
+
 void sum_to_all(const float *in, double *out, meep::integer size) {
   double *in2 = new double[size];
   for (meep::integer i = 0; i < size; ++i) in2[i] = in[i];
@@ -359,6 +377,10 @@ void sum_to_all(const complex<double> *in, complex<double> *out, meep::integer s
 
 void sum_to_all(const complex<float> *in, complex<double> *out, meep::integer size) {
   sum_to_all((const float*) in, (double*) out, 2*size);
+}
+
+void sum_to_master(const complex<float> *in, complex<float> *out, meep::integer size) {
+  sum_to_master((const float*) in, (float*) out, 2*size);
 }
 
 void sum_to_master(const complex<double> *in, complex<double> *out, meep::integer size) {
