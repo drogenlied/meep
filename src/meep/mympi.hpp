@@ -52,6 +52,7 @@ bool am_really_master();
 inline int am_master() { return my_rank() == 0; }
 
 void send(int from, int to, double *data, int size=1);
+void broadcast(int from, float *data, meep::integer size);
 void broadcast(int from, double *data, meep::integer size);
 void broadcast(int from, char *data, meep::integer size);
 void broadcast(int from, int *data, meep::integer size);
@@ -65,13 +66,16 @@ bool broadcast(int from, bool);
 double max_to_master(double); // Only returns the correct value to proc 0.
 double max_to_all(double);
 int max_to_all(int);
+float sum_to_master(float);
 double sum_to_master(double); // Only returns the correct value to proc 0.
 double sum_to_all(double);
 void sum_to_all(const double *in, double *out, meep::integer size);
+void sum_to_master(const float *in, float *out, meep::integer size);
 void sum_to_master(const double *in, double *out, meep::integer size);
 void sum_to_all(const float *in, double *out, meep::integer size);
 void sum_to_all(const std::complex<float> *in, std::complex<double> *out, meep::integer size);
 void sum_to_all(const std::complex<double> *in, std::complex<double> *out, meep::integer size);
+void sum_to_master(const std::complex<float> *in, std::complex<float> *out, meep::integer size);
 void sum_to_master(const std::complex<double> *in, std::complex<double> *out, meep::integer size);
 long double sum_to_all(long double);
 std::complex<double> sum_to_all(std::complex<double> in);

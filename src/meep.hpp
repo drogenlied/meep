@@ -1606,11 +1606,6 @@ std::complex<double> *make_casimir_gfunc(double T, double dt, double sigma, fiel
 
 std::complex<double> *make_casimir_gfunc_kz(double T, double dt, double sigma, field_type ft);
 
-#if MEEP_SINGLE
-// in mympi.cpp ... must be here in order to use realnum type
-void broadcast(int from, realnum *data, int size);
-#endif
-
 // random number generation: random.cpp
 void set_random_seed(unsigned long seed);
 double uniform_random(double a, double b); // uniform random in [a,b]
