@@ -1,4 +1,7 @@
-751c751,755
+10a11,12
+> #include <cstddef>
+> 
+760c762,766
 < typedef SCM (*swig_guile_proc)();
 ---
 > #if SCM_MAJOR_VERSION >= 2

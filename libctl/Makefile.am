@@ -86,6 +86,7 @@ ctl-io.cpp: $(SPECIFICATION_FILE) $(LIBCTL_DIR)/utils/geom.scm ctl-io.h
 
 ctl-io.h: $(SPECIFICATION_FILE) $(LIBCTL_DIR)/utils/geom.scm
 	$(GEN_CTL_IO) --cxx --header -o $@ $(SPECIFICATION_FILE) $(LIBCTL_DIR)
+	patch -p0 $@ < $(srcdir)/ctl-io_.patch
 
 ctl-io.i: $(SPECIFICATION_FILE) $(LIBCTL_DIR)/utils/geom.scm
 	$(GEN_CTL_IO) --cxx --swig -o $@ $(SPECIFICATION_FILE) $(LIBCTL_DIR)
