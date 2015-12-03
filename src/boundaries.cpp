@@ -331,20 +331,23 @@ void fields::connect_the_chunks() {
       for (int ip=0;ip<3;ip++)
 	for (int j=0;j<num_chunks;j++)
 	  comm_sizes[ft][ip][j+i*num_chunks] = 0;
-    FOR_COMPONENTS(corig) {
-      if (have_component(corig))
-	LOOP_OVER_VOL_NOTOWNED(vi, corig, n) {
-	  IVEC_LOOP_ILOC(vi, here);
-	  component c = corig;
-	  // We're looking at a border element...
-	  complex<double> thephase;
-	  if (locate_component_point(&c,&here,&thephase)
-	      && !on_metal_boundary(here))
-	    for (int j=0;j<num_chunks;j++) {
-	      if ((chunks[i]->is_mine() || chunks[j]->is_mine())
-		  && chunks[j]->gv.owns(here)
-		  && !(is_B(corig) && is_B(c) &&
-		       B_redundant[5*i+corig-Bx] && B_redundant[5*j+c-Bx])) {
+
+    for (int j=0;j<num_chunks;j++) {
+      if (!(chunks[i]->is_mine() || chunks[j]->is_mine())) {
+        continue;
+      }
+      FOR_COMPONENTS(corig) {
+        if (have_component(corig))
+      LOOP_OVER_VOL_NOTOWNED(vi, corig, n) {
+        IVEC_LOOP_ILOC(vi, here);
+        component c = corig;
+        // We're looking at a border element...
+        complex<double> thephase;
+        if (locate_component_point(&c,&here,&thephase)
+            && !on_metal_boundary(here))
+          if (chunks[j]->gv.owns(here)
+              && !(is_B(corig) && is_B(c) &&
+                   B_redundant[5*i+corig-Bx] && B_redundant[5*j+c-Bx])) {
 		const int pair = j+i*num_chunks;
 		const connect_phase ip = thephase == 1.0 ? CONNECT_COPY 
 		  : (thephase == -1.0 ? CONNECT_NEGATE : CONNECT_PHASE);
@@ -391,11 +394,11 @@ void fields::connect_the_chunks() {
 		  nc[f][iip][Incoming][i] += ni;
 		  nc[f][iip][Outgoing][j] += ni;
 		  comm_sizes[f][iip][pair] += ni;
-		}
-	      } // if is_mine and owns...
-	    } // loop over j chunks
-        } // LOOP_OVER_VOL_NOTOWNED
-    } // FOR_COMPONENTS
+		} // is_electric ...
+	      } // if gv.owns(here) ...
+      } // LOOP_OVER_VOL_NOTOWNED
+      } // FOR_COMPONENTS
+    } // loop over j chunks
 
     // Allocating comm blocks as we go...
     FOR_FIELD_TYPES(ft)
@@ -447,20 +450,22 @@ void fields::connect_the_chunks() {
 	    + comm_sizes[f][ip][(j-1)+i*num_chunks];
       }
 
-    FOR_COMPONENTS(corig)
-      if (have_component(corig))
-	LOOP_OVER_VOL_NOTOWNED(vi, corig, n) {
-  	  IVEC_LOOP_ILOC(vi, here);
-	  component c = corig;
-	  // We're looking at a border element...
-	  complex<double> thephase;
-	  if (locate_component_point(&c,&here,&thephase)
-	      && !on_metal_boundary(here))
-	    for (int j=0;j<num_chunks;j++) {
-	      if ((chunks[i]->is_mine() || chunks[j]->is_mine())
-		  && chunks[j]->gv.owns(here)
-		  && !(is_B(corig) && is_B(c) &&
-		       B_redundant[5*i+corig-Bx] && B_redundant[5*j+c-Bx])) {
+    for (int j = 0; j < num_chunks; j++) {
+      if (!(chunks[i]->is_mine() || chunks[j]->is_mine())) {
+        continue;
+      }
+      FOR_COMPONENTS(corig)
+        if (have_component(corig))
+      LOOP_OVER_VOL_NOTOWNED(vi, corig, n) {
+        IVEC_LOOP_ILOC(vi, here);
+        component c = corig;
+        // We're looking at a border element...
+        complex<double> thephase;
+        if (locate_component_point(&c,&here,&thephase)
+            && !on_metal_boundary(here))
+          if (chunks[j]->gv.owns(here)
+              && !(is_B(corig) && is_B(c) &&
+                   B_redundant[5*i+corig-Bx] && B_redundant[5*j+c-Bx])) {
 		const connect_phase ip = thephase == 1.0 ? CONNECT_COPY 
 		  : (thephase == -1.0 ? CONNECT_NEGATE : CONNECT_PHASE);
 		const meep::integer m = chunks[j]->gv.index(c, here);
@@ -541,11 +546,11 @@ void fields::connect_the_chunks() {
 			    }
 			  }
 			}
-		      }
+		      } // if (*pi->s == *pj->s)
 		} // is_electric(corig)
-	      } // if is_mine and owns...
-	    } // loop over j chunks
+	    } // if gv.owns(here) ...
       } // LOOP_OVER_VOL_NOTOWNED
+    } // loop over j chunks
   } // loop over i chunks
   FOR_FIELD_TYPES(f)
     for (int ip=0;ip<3;ip++)
