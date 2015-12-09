@@ -167,6 +167,57 @@ bool fields::locate_point_in_user_volume(ivec *there, complex<double> *phase) co
   return user_volume.owns(*there);
 }
 
+// calculate the minimum distance between a and b under
+// all possible symmetry tranformations
+double fields::min_distance_with_symmetries(const grid_volume &a,
+                                            const grid_volume &b) const {
+  double dist2 = meep::infinity;
+  ivec lc_b = b.little_corner();
+  ivec bc_b = b.big_corner();
+  int mul = S.multiplicity();
+  for (int sn = 0; sn < mul; ++sn) {
+    ivec p1_a = S.transform(a.little_corner(), sn);
+    ivec p2_a = S.transform(a.big_corner(), sn);
+    double curr_dist2 = 0;
+    LOOP_OVER_DIRECTIONS(b.dim, dir) {
+      meep::integer la =
+        std::min(p1_a.in_direction(dir), p2_a.in_direction(dir));
+      meep::integer ha =
+        std::max(p1_a.in_direction(dir), p2_a.in_direction(dir));
+      meep::integer lb = lc_b.in_direction(dir);
+      meep::integer hb = bc_b.in_direction(dir);
+
+      double dist = static_cast<double>(std::max(lb - ha, la - hb));
+      if ((dist > 0) && (boundaries[High][dir] == Periodic)) {
+        if (lb > ha) {
+          while (lb > ha) {
+            la += ilattice_vector(dir).in_direction(dir);
+            ha += ilattice_vector(dir).in_direction(dir);
+          }
+        } else if (la > hb) {
+          while (la > hb) {
+            lb += ilattice_vector(dir).in_direction(dir);
+            hb += ilattice_vector(dir).in_direction(dir);
+          }
+        }
+        dist = std::min(dist, static_cast<double>(std::max(lb - ha, la - hb)));
+      }
+      if (dist > 0) {
+        curr_dist2 += dist * dist;
+      }
+    }
+    dist2 = std::min(dist2, curr_dist2);
+    if (dist2 == 0.0) {
+      return dist2;
+    }
+  }
+  if (dist2 < meep::infinity) {
+    return std::sqrt(dist2);
+  } else {
+    return meep::infinity;
+  }
+}
+
 void fields::locate_volume_source_in_user_volume(const vec p1, const vec p2, vec newp1[8], vec newp2[8],
                                                   complex<double> kphase[8], int &ncopies) const {
   // For periodic boundary conditions, 
@@ -336,6 +387,9 @@ void fields::connect_the_chunks() {
       if (!(chunks[i]->is_mine() || chunks[j]->is_mine())) {
         continue;
       }
+      if (min_distance_with_symmetries(vi, chunks[j]->gv) > 0) {
+    	  continue;
+      }
       FOR_COMPONENTS(corig) {
         if (have_component(corig))
       LOOP_OVER_VOL_NOTOWNED(vi, corig, n) {
@@ -453,6 +507,9 @@ void fields::connect_the_chunks() {
     for (int j = 0; j < num_chunks; j++) {
       if (!(chunks[i]->is_mine() || chunks[j]->is_mine())) {
         continue;
+      }
+      if (min_distance_with_symmetries(vi, chunks[j]->gv) > 0) {
+    	  continue;
       }
       FOR_COMPONENTS(corig)
         if (have_component(corig))
