@@ -388,7 +388,7 @@ void fields::connect_the_chunks() {
         continue;
       }
       if (min_distance_with_symmetries(vi, chunks[j]->gv) > 0) {
-    	  continue;
+        continue;
       }
       FOR_COMPONENTS(corig) {
         if (have_component(corig))
@@ -509,7 +509,7 @@ void fields::connect_the_chunks() {
         continue;
       }
       if (min_distance_with_symmetries(vi, chunks[j]->gv) > 0) {
-    	  continue;
+        continue;
       }
       FOR_COMPONENTS(corig)
         if (have_component(corig))
