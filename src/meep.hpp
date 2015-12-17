@@ -1508,6 +1508,8 @@ class fields {
   bool locate_point_in_user_volume(ivec *, std::complex<double> *phase) const;
   void locate_volume_source_in_user_volume(const vec p1, const vec p2, vec newp1[8], vec newp2[8],
                                            std::complex<double> kphase[8], int &ncopies) const;
+  double min_distance_with_symmetries(const grid_volume &a,
+                                      const grid_volume &b) const;
   // mympi.cpp
   void boundary_communications(field_type);
   // step.cpp
